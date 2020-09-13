@@ -6,7 +6,7 @@ all:Client Server
 Client:Client.cc
 	$(cc) -o $@ $^ -std=c++11
 Server:Server.cc
-	$(cc) -o $@ $^ -std=c++11
+	$(cc) -o $@ $^ -lpthread -std=c++11
 
 .PHONY:clean
 clean:

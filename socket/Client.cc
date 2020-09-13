@@ -1,8 +1,8 @@
-#include "Server.hpp"
-
+#include "Client.hpp"
+ 
 void Usage(std::string proc)
 {
-  std::cout << "Usage: " << proc << " local_ip local_port" << std::endl;
+  std::cout << "Usage: " << proc << " server_ip server_port" << std::endl;
 }
 int main(int argc, char *argv[])
 {
@@ -10,12 +10,13 @@ int main(int argc, char *argv[])
     Usage(argv[0]);
     exit(1);
   }
+
   int port = atoi(argv[2]);
   std::string ip = argv[1];
 
-  Server *sp = new Server(ip,port);
-  sp->InitServer();
-  sp->Start();
+  Client *cp = new Client(ip,port);
+  cp->InitClient();
+  cp->Start();
 
   return 0;
 }

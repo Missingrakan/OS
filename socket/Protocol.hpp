@@ -64,14 +64,14 @@ class Sock{
       peer.sin_port = htons(peer_port);
       peer.sin_addr.s_addr = inet_addr(peer_ip.c_str());
 
-      if(connect(sockfd,(struct sockaddr*)&peer,sizeof(peer) < 0)){
+      if(connect(sockfd,(struct sockaddr*)&peer,sizeof(peer)) < 0){
         std::cerr << "connect err" << std::endl;
         exit(3);
       }
     }
     static void Send(int sockfd, std::string &msg)
     {
-      write(sockfd, msg.c_str(), msg.size());
+      write(sockfd,msg.c_str(),msg.size());
     }
     static bool Recv(int sockfd,std::string &output)
     {
