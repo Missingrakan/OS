@@ -12,18 +12,6 @@
 
 using namespace std;
 
-class context{
-  public:
-    int fd;
-    char buffer[1024];
-    Request req;
-    Response rsp;
-
-    contest(int _fd):fd(_fd){
-
-    }
-};
-
 class Sock{
   public:
     static int Socket()
@@ -107,7 +95,7 @@ class epoll_server{
             if(sock >= 0){
               cout << "有新链接到来..." << endl;
               ev.events = EPOLLIN;
-              ev.data.ptr = new context(fd);
+              ev.data.fd = sock;
               epoll_ctl(epfd, EPOLL_CTL_ADD,sock,&ev);  //将新的事件添加到rb，user->os
             }
           }
