@@ -33,6 +33,7 @@ class HttpServer{
          LOG(Normal,"get a new linking!");
          pthread_t tid;
          pthread_create(&tid, nullptr, Entry::HanderRequest, (void*)sock);
+        pthread_detach(tid);
         }
       }
     }
