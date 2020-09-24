@@ -38,7 +38,7 @@ class Sock{
     static void Listen(int sock){
       if(listen(sock,NUM) < 0){
         LOG(Fatal,"listen socket error!");
-        exit(LISTEN_ERROE);
+        exit(LISTEN_ERROR);
       }
     }
     static int Accept(int sock){

@@ -8,7 +8,8 @@
 #define ARG_ERR 1
 #define SOCKET_CREATE 2
 #define BIND_ERROR 3
-#define LISTEN_ERROE 4
+#define LISTEN_ERROR 4
+#define NORMAL_ERROR -1
 
 //log error level
 #define Normal 1

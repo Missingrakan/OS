@@ -18,7 +18,7 @@ class HttpServer{
     HttpServer(int _port = DefaultPort) : port(_port),listen_sock(-1)
     {}
     void InitServer(){
-      cout << port << endl;
+      //cout << port << endl;
       listen_sock = Sock::Socket();
       Sock::Bind(listen_sock,port);
       Sock::Listen(listen_sock);
@@ -32,7 +32,7 @@ class HttpServer{
         if(sock < 0){
          LOG(Normal,"get a new linking!");
          pthread_t tid;
-         pthread_create(&tid, nullptr, Entry::HanderRequest, (void*)sock);
+         pthread_create(&tid, nullptr, Entry::HanderRequest, (void*)&sock);
         pthread_detach(tid);
         }
       }
