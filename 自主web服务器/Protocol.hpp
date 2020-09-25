@@ -5,10 +5,15 @@
 #include <unordered_map>
 #include <sstream>
 #include <strings.h>
+#include <unistd.h>
 #include <sys/types.h>
 #include <sys/socket.h>
+#include <sys/stat.h>
 #include "Log.hpp"
 #include "Util.hpp"
+
+#define WWWROOT "./wwwroot"
+#define WELCOME_PAGE "index.html"
 
 class HttpRequest{
   private:
@@ -25,8 +30,10 @@ class HttpRequest{
 
     std::string path; //你这次请求想访问服务器上面的哪个资源
     std::string query_string; //你这次请求，想给服务器上面的的哪个资源传递参数
+    int file_size;
+    bool cgi;
   public:
-    HttpRequest():blank("\n"){
+    HttpRequest():blank("\n"), path(WWWROOT), cgi(false), file_size(0){
     }
     void SetRequestLine(std::string &line){
       request_line = line;
@@ -39,7 +46,14 @@ class HttpRequest{
     }
     void SetUrlToPath(){
       //if method == POST
-      path = url;
+      path += url;
+    }
+    void SetCGI(){
+      cgi = true;
+    }
+    int GetFileSize()
+    {
+      return file_size;
     }
     //GET /INDEX.HTML HTTP/1.0\n  
     void RequestLineParse(){
@@ -64,10 +78,11 @@ class HttpRequest{
       //url -> path, query_string(有可能不存在)
       std::size_t pos = url.find('?');
       if(std::string::npos == pos){
-        path = url;
+        path += url;  //不带参数
       }else{
-        path = url.substr(0,pos); // /a/b?x=100
-        query_string = url.substr(pos+1);
+        path += url.substr(0,pos); // /a/b?x=100
+        query_string = url.substr(pos+1); //带参数的
+        cgi = true;
       }
     }
     bool IsMethodok(){
@@ -76,9 +91,42 @@ class HttpRequest{
       }
       return false;
     }
+    bool IsCgi(){
+      return cgi;
+    }
+    bool PathIsLegal()
+    {
+      bool ret = true;
+      struct stat st;
+      if(stat(path.c_str(),&st) == 0){
+        //exist
+        if(S_ISDIR(st.st_mode)){
+          if(path[path.length()-1] != '/'){
+            path += "/";
+          }
+          path += WELCOME_PAGE;
+        }
+        else if((st.st_mode & S_IXUSR) || (st.st_mode & S_IXGRP) || (st.st_mode & S_IXOTH)){
+          //可执行程序？POST，GET(带参的)
+          cgi = true;
+        }
+        else{
+          //OK
+        }
+        file_size = st.st_size;
+      }else{
+        //not exist 404
+        ret = false;
+      }
+      return ret;
+    }
     bool IsGet()
     {
       return strcasecmp(method.c_str(),"GET") == 0;
+    }
+    bool IsPost()
+    {
+      return strcasecmp(method.c_str(),"POST") == 0;
     }
     int GetContentLength()
     {
@@ -109,10 +157,25 @@ class HttpRequest{
 
 class HttpResponse{
   private:
-    std::string status_line;
+    std::string response_line;
     std::string response_header;
     std::string blank;
     std::string response_text;
+  public:
+    HttpResponse():blank("\n"){
+    }
+    void SetResponseLine(std::string line){
+      response_line = line;
+    }
+    void AddResponseHeader(std::string &line){
+      if(response_header.empty()){
+        response_header = line;
+      }
+      else{
+        response_header += line;
+      }
+    }
+    ~HttpResponse(){}
 };
 
 class Connect{
@@ -188,6 +251,7 @@ class Connect{
         rq->SetRequestBody(body);
       }
       rq->SetUrlToPath();
+      rq->SetCGI();
     }
     ~Connect()
     {}
@@ -195,6 +259,28 @@ class Connect{
 
 class Entry{
   public:
+    static void MakeResponse(HttpRequest*rq, HttpResponse *rsp)
+    {
+      if(rq->IsCgi()){
+
+      }
+      else{
+        std::string line = "HTTP/1.0 OK\r\n";
+        rsp->SetResponseLine(line);
+        line = "Content-Type: text/html\r\n";
+        rsp->AddResponseHeader(line);
+        line = "Content-Length: ";
+        line += Util::IntToString(rq->GetFileSize());
+        line += "\r\n";
+        rsp->AddResponseHeader(line);
+      }
+    }
+    static int ProcessNormal(Connect *conn, HttpRequest *rq, HttpResponse *rsp)
+    {
+      //没有query_string,不是POST,path
+      MakeResponse(rq,rsp);
+
+    }
     static void *HanderRequest(void *arg){
      int sock = *(int*)arg;
      Connect *conn = new Connect(sock);
@@ -209,7 +295,7 @@ class Entry{
      //分析url:path, paramter
      rq->RequestHeaderParse();
      //url: 域名/资源文件?x=XX&&y=YY
-     if(!rq->IsGet()){
+     if(rq->IsPost()){
        //POST
        conn->RecvHttpBody(rq);
      }
@@ -219,7 +305,24 @@ class Entry{
        rq->UrlParse();
      }
      //2.分析请求路径中是否携带参数
-     //rq->path 
+     //rq->path
+     if(!rq->PathIsLegal()){
+       LOG(Warning,"Path is not legal!");
+     }
+     //request读完，url解析完毕，cgi setdone
+     //no cgi:没有参数，更不是POST，http request -> path
+     //cgi : 带参，server要处理参数
+     
+     if(rq->IsCgi()){
+       //CGI
+       LOG(Normal,"exec by cgi!");
+     }
+     else{
+       //non cgi
+       LOG(Normal,"exec by noncgi!");
+       ProcessNormal(conn, rq, rsp);
+     }
+
      rq->Show();
 
      //recv request

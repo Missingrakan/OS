@@ -23,4 +23,10 @@ class Util{
       ss >> len;
       return len;
     }
+    static std::string IntToString(int num)
+    {
+      std::stringstream ss;
+      ss << num;
+      return ss.str();
+    }
 };
