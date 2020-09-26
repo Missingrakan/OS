@@ -29,17 +29,18 @@ class HttpServer{
       LOG(Normal,"server Start success!");
       for(;;){
         int sock = Sock::Accept(listen_sock);
-        if(sock < 0){
+        if(sock >= 0){
          LOG(Normal,"get a new linking!");
          pthread_t tid;
-         pthread_create(&tid, nullptr, Entry::HanderRequest, (void*)&sock);
-        pthread_detach(tid);
+         int *p = new int(sock);
+         pthread_create(&tid, nullptr, Entry::HanderRequest, (void*)p);
+         pthread_detach(tid);
         }
       }
     }
     ~HttpServer()
     {
-      if(listen_sock < 0){
+      if(listen_sock >= 0){
         close(listen_sock);
       }
     }

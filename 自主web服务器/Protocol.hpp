@@ -9,6 +9,8 @@
 #include <sys/types.h>
 #include <sys/socket.h>
 #include <sys/stat.h>
+#include <fcntl.h>
+#include <sys/sendfile.h>
 #include "Log.hpp"
 #include "Util.hpp"
 
@@ -31,9 +33,10 @@ class HttpRequest{
     std::string path; //你这次请求想访问服务器上面的哪个资源
     std::string query_string; //你这次请求，想给服务器上面的的哪个资源传递参数
     int file_size;
+    int fd;   //打开的文件资源
     bool cgi;
   public:
-    HttpRequest():blank("\n"), path(WWWROOT), cgi(false), file_size(0){
+    HttpRequest():blank("\n"), path(WWWROOT), cgi(false), file_size(0), fd(-1){
     }
     void SetRequestLine(std::string &line){
       request_line = line;
@@ -51,6 +54,9 @@ class HttpRequest{
     void SetCGI(){
       cgi = true;
     }
+    int Getfd(){
+      return fd;
+    }
     int GetFileSize()
     {
       return file_size;
@@ -61,7 +67,10 @@ class HttpRequest{
       ss >> method >> url >> version;
       std::cout << "Method: " << method << std::endl;
       std::cout << "url: " << url << std::endl;
-      std::cout << "version" << version << std::endl;
+      std::cout << "version: " << version << std::endl;
+      if(url == "/"){
+        url += WELCOME_PAGE;
+      }
     }
     void RequestHeaderParse(){
       size_t pos = request_header.find('\n');
@@ -85,6 +94,15 @@ class HttpRequest{
         cgi = true;
       }
     }
+    bool OpenResources(){
+      int ret = true;
+      int fd = open(path.c_str(),O_RDONLY);
+      if(fd < 0){
+        LOG(Error,"open resources failed!");
+        ret = false;
+      }
+      return ret;
+    }
     bool IsMethodok(){
       if(strcasecmp(method.c_str(),"GET") == 0 || strcasecmp(method.c_str(),"POST") == 0){
         return true;
@@ -96,6 +114,7 @@ class HttpRequest{
     }
     bool PathIsLegal()
     {
+      std::cout << "debug path: " << path << std::endl;
       bool ret = true;
       struct stat st;
       if(stat(path.c_str(),&st) == 0){
@@ -140,6 +159,7 @@ class HttpRequest{
     }
     void Show()
     {
+      std::cout << "#####################start#####################" << std::endl;
       std::cout << "debug: " << request_line;
       std::cout << "debug: " << request_header;
       std::cout << "debug: " << blank;
@@ -150,9 +170,15 @@ class HttpRequest{
 
       std::cout << "debug, path: " << path << std::endl;
       std::cout << "debug, query_string: " << query_string << std::endl;
-      }
+      std::cout << "#####################end#####################" << std::endl;
+    }
 
-    ~HttpRequest(){}
+    ~HttpRequest()
+    {
+      if(fd >= 0){
+        close(fd);
+      }
+    }
 };
 
 class HttpResponse{
@@ -163,6 +189,15 @@ class HttpResponse{
     std::string response_text;
   public:
     HttpResponse():blank("\n"){
+    }
+    std::string &GetResponseLine(){
+      return response_line;
+    }
+    std::string &GetResponseHeader(){
+      return response_header;
+    }
+    std::string &GetBlank(){
+      return blank;
     }
     void SetResponseLine(std::string line){
       response_line = line;
@@ -253,8 +288,20 @@ class Connect{
       rq->SetUrlToPath();
       rq->SetCGI();
     }
+    void SendResponse(HttpRequest *rq, HttpResponse *rsp){
+      std::string line = rsp->GetResponseLine();
+      line += rsp->GetResponseHeader();
+      line += rsp->GetBlank();
+      send(sock, line.c_str(), line.size(),0);
+
+      sendfile(sock, rq->Getfd(), nullptr, rq->GetFileSize());
+    }
     ~Connect()
-    {}
+    {
+      if(sock >= 0){
+        close(sock);
+      }
+    }
 };
 
 class Entry{
@@ -262,10 +309,10 @@ class Entry{
     static void MakeResponse(HttpRequest*rq, HttpResponse *rsp)
     {
       if(rq->IsCgi()){
-
+        //TODO
       }
       else{
-        std::string line = "HTTP/1.0 OK\r\n";
+        std::string line = "HTTP/1.0 200 OK\r\n";
         rsp->SetResponseLine(line);
         line = "Content-Type: text/html\r\n";
         rsp->AddResponseHeader(line);
@@ -273,64 +320,71 @@ class Entry{
         line += Util::IntToString(rq->GetFileSize());
         line += "\r\n";
         rsp->AddResponseHeader(line);
+        rq->OpenResources();
       }
     }
     static int ProcessNormal(Connect *conn, HttpRequest *rq, HttpResponse *rsp)
     {
       //没有query_string,不是POST,path
       MakeResponse(rq,rsp);
-
+      conn->SendResponse(rq,rsp);
     }
     static void *HanderRequest(void *arg){
-     int sock = *(int*)arg;
-     Connect *conn = new Connect(sock);
-     HttpRequest *rq = new HttpRequest();
-     HttpResponse *rsp = new HttpResponse();
+      int *p = (int*)arg;
+      int sock = *p;
+      delete p;
 
-     conn->RecvHttpRequest(rq);
+      Connect *conn = new Connect(sock);
+      HttpRequest *rq = new HttpRequest();
+      HttpResponse *rsp = new HttpResponse();
 
-     if(!rq->IsMethodok()){
-       LOG(Warning,"request Method is Not ok!");
-     }
-     //分析url:path, paramter
-     rq->RequestHeaderParse();
-     //url: 域名/资源文件?x=XX&&y=YY
-     if(rq->IsPost()){
-       //POST
-       conn->RecvHttpBody(rq);
-     }
-     //request请求全部读完
-     //1.分析请求资源是否合法
-     if(rq->IsGet()){
-       rq->UrlParse();
-     }
-     //2.分析请求路径中是否携带参数
-     //rq->path
-     if(!rq->PathIsLegal()){
-       LOG(Warning,"Path is not legal!");
-     }
-     //request读完，url解析完毕，cgi setdone
-     //no cgi:没有参数，更不是POST，http request -> path
-     //cgi : 带参，server要处理参数
-     
-     if(rq->IsCgi()){
-       //CGI
-       LOG(Normal,"exec by cgi!");
-     }
-     else{
-       //non cgi
-       LOG(Normal,"exec by noncgi!");
-       ProcessNormal(conn, rq, rsp);
-     }
+      conn->RecvHttpRequest(rq);
+      rq->RequestLineParse();
 
-     rq->Show();
+      if(!rq->IsMethodok()){
+        LOG(Warning,"request Method is Not ok!");
+      }
+      //分析url:path, paramter
+      rq->RequestHeaderParse();
+      //url: 域名/资源文件?x=XX&&y=YY
+      if(rq->IsPost()){
+        //POST
+        conn->RecvHttpBody(rq);
+      }
+      //request请求全部读完
+      //1.分析请求资源是否合法
+      if(rq->IsGet()){
+        rq->UrlParse();
+      }
+      //2.分析请求路径中是否携带参数
+      //rq->path
+      if(!rq->PathIsLegal()){
+        LOG(Warning,"Path is not legal!");
+      }
+      //request读完，url解析完毕，cgi setdone
+      //no cgi:没有参数，更不是POST，http request -> path
+      //cgi : 带参，server要处理参数
+      
+      if(rq->IsCgi()){
+        //CGI
+        LOG(Normal,"exec by cgi!");
+      }
+      else{
+        //non cgi
+        LOG(Normal,"exec by noncgi!");
+        ProcessNormal(conn, rq, rsp);
+      }
 
-     //recv request
-     //parse request
-     //make response
-     //send response     
-     delete conn;
-     delete rq;
-     delete rsp;
+      //MakeResponse(rq,rsp);
+      //conn->SendResponse(rq,rsp);
+      //rq->Show();
+
+      //recv request
+      //parse request
+      //make response
+      //send response     
+      delete conn;
+      delete rq;
+      delete rsp;
     }
 };
