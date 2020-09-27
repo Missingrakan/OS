@@ -9,6 +9,7 @@
 #include <sys/types.h>
 #include <sys/socket.h>
 #include <sys/stat.h>
+#include <sys/wait.h>
 #include <fcntl.h>
 #include <sys/sendfile.h>
 #include "Log.hpp"
@@ -35,6 +36,7 @@ class HttpRequest{
     int file_size;
     int fd;   //打开的文件资源
     bool cgi;
+    std::string suffix;
   public:
     HttpRequest():blank("\n"), path(WWWROOT), cgi(false), file_size(0), fd(-1){
     }
@@ -60,6 +62,18 @@ class HttpRequest{
     int GetFileSize()
     {
       return file_size;
+    }
+    std::string GetQueryString(){
+      return query_string;
+    }
+    std::string GetRequestBody(){
+      return request_body;
+    }
+    std::string GetPath(){
+      return path;
+    }
+    std::string &GetSuffix(){
+      return suffix;
     }
     //GET /INDEX.HTML HTTP/1.0\n  
     void RequestLineParse(){
@@ -96,7 +110,7 @@ class HttpRequest{
     }
     bool OpenResources(){
       int ret = true;
-      int fd = open(path.c_str(),O_RDONLY);
+      fd = open(path.c_str(),O_RDONLY);
       if(fd < 0){
         LOG(Error,"open resources failed!");
         ret = false;
@@ -133,6 +147,12 @@ class HttpRequest{
           //OK
         }
         file_size = st.st_size;
+        std::size_t pos = path.rfind(".");
+        if(std::string::npos == pos){
+          suffix = ".html";
+        }else{
+          suffix = path.substr(pos);
+        }
       }else{
         //not exist 404
         ret = false;
@@ -282,6 +302,7 @@ class Connect{
         while(content_length > 0){
           recv(sock,&c,1,0);
           body.push_back(c);
+          content_length--;
         }
         rq->SetRequestBody(body);
       }
@@ -314,7 +335,9 @@ class Entry{
       else{
         std::string line = "HTTP/1.0 200 OK\r\n";
         rsp->SetResponseLine(line);
-        line = "Content-Type: text/html\r\n";
+        line = "Content-Type: ";
+        line += Util::SuffixToType(rq->GetSuffix());
+        line += "\r\n";
         rsp->AddResponseHeader(line);
         line = "Content-Length: ";
         line += Util::IntToString(rq->GetFileSize());
@@ -323,34 +346,85 @@ class Entry{
         rq->OpenResources();
       }
     }
-    static int ProcessNormal(Connect *conn, HttpRequest *rq, HttpResponse *rsp)
+    static void ProcessNormal(Connect *conn, HttpRequest *rq, HttpResponse *rsp)
     {
       //没有query_string,不是POST,path
       MakeResponse(rq,rsp);
       conn->SendResponse(rq,rsp);
+    }
+    static int ProcessCGI(Connect *conn, HttpRequest *rq, HttpResponse *rsp){
+      int read_pipe[2];
+      int write_pipe[2];
+      pipe(read_pipe);
+      pipe(write_pipe);
+
+
+      pid_t id = fork();
+      if(id < 0){
+        LOG(Error,"fork error!");
+        return 404;
+      }else if(id == 0){
+        //child
+        close(read_pipe[1]);
+        close(write_pipe[0]);
+
+        std::string path = rq->GetPath();
+        //增加约定，利用重定向计数来完成文件描述符的约定
+        execl(path.c_str(),path.c_str(),nullptr);
+
+        //rq->path 这个是我们要让子进程执行的程序
+        //参数为rq->query_string(GET) or rq->body(POST)
+        exit(1);
+      }else{
+        //father
+        close(read_pipe[0]);
+        close(write_pipe[1]);
+
+        std::string args;
+        if(rq->IsGet()){
+          args = rq->GetQueryString();    
+        }else{
+          args = rq->GetRequestBody();  
+        }
+
+        char c;
+        std::string body;
+        while(read(write_pipe[0], &c, 1) > 0){
+          body.push_back(c);
+        }
+        //将body设置进response_body
+        pid_t ret = waitpid(id,nullptr,0);
+        if(ret < 0){
+          LOG(Warning, "waitpid child failed!");
+          return 404;
+        }
+      }
     }
     static void *HanderRequest(void *arg){
       int *p = (int*)arg;
       int sock = *p;
       delete p;
 
+      int code = 200;
       Connect *conn = new Connect(sock);
       HttpRequest *rq = new HttpRequest();
       HttpResponse *rsp = new HttpResponse();
 
       conn->RecvHttpRequest(rq);
       rq->RequestLineParse();
+      rq->RequestHeaderParse();
 
       if(!rq->IsMethodok()){
+        code = 404;
         LOG(Warning,"request Method is Not ok!");
+        goto end;
       }
-      //分析url:path, paramter
-      rq->RequestHeaderParse();
       //url: 域名/资源文件?x=XX&&y=YY
       if(rq->IsPost()){
         //POST
         conn->RecvHttpBody(rq);
       }
+
       //request请求全部读完
       //1.分析请求资源是否合法
       if(rq->IsGet()){
@@ -359,7 +433,9 @@ class Entry{
       //2.分析请求路径中是否携带参数
       //rq->path
       if(!rq->PathIsLegal()){
+        code = 404;
         LOG(Warning,"Path is not legal!");
+        goto end;
       }
       //request读完，url解析完毕，cgi setdone
       //no cgi:没有参数，更不是POST，http request -> path
@@ -368,6 +444,7 @@ class Entry{
       if(rq->IsCgi()){
         //CGI
         LOG(Normal,"exec by cgi!");
+        ProcessCGI(conn,rq,rsp);
       }
       else{
         //non cgi
@@ -382,7 +459,8 @@ class Entry{
       //recv request
       //parse request
       //make response
-      //send response     
+      //send response
+end:
       delete conn;
       delete rq;
       delete rsp;
