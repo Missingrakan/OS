@@ -22,6 +22,7 @@ class HttpServer{
       listen_sock = Sock::Socket();
       Sock::Bind(listen_sock,port);
       Sock::Listen(listen_sock);
+      signal(SIGPIPE, SIG_IGN);
     }
 
     void Start()

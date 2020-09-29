@@ -7,6 +7,7 @@
 #include <strings.h>
 #include <unistd.h>
 #include <stdlib.h>
+#include <signal.h>
 #include <sys/types.h>
 #include <sys/socket.h>
 #include <sys/stat.h>
@@ -18,6 +19,7 @@
 
 #define WWWROOT "./wwwroot"
 #define WELCOME_PAGE "index.html"
+#define PAGE_404 "./wwwroot/404.html"
 
 class HttpRequest{
   private:
@@ -72,6 +74,14 @@ class HttpRequest{
     }
     std::string GetPath(){
       return path;
+    }
+    void SetPath(std::string _path){
+      path = _path;
+      struct stat st;
+      stat(path.c_str(), &st);
+      file_size = st.st_size;
+      cgi = false;
+      suffix = ".html";
     }
     std::string &GetSuffix(){
       return suffix;
@@ -250,9 +260,10 @@ class Connect{
     //2. \r\n
     //3. \n
     //4. read one char
-    int RecvLine(std::string &line)
+    bool RecvLine(std::string &line)
     {
       char c = 'X';
+      bool result = true;
       while(c != '\n'){
         ssize_t s = recv(sock,&c,1,0);
         if(s > 0){
@@ -269,36 +280,45 @@ class Connect{
         }
         else{
           LOG(Warning,"recv request error!");
+          result = false;
           break;
         }
       }
-      return line.size();
+      return result;
     }
-    void RecvHttpRequestLine(std::string &request_line)
+    bool RecvHttpRequestLine(std::string &request_line)
     {
-      RecvLine(request_line);
+      return RecvLine(request_line);
     }
-    void RecvHttpRequestHeader(std::string &request_header)
+    bool RecvHttpRequestHeader(std::string &request_header)
     {
       std::string line = "";
+      bool result = true;
       do{
           line = "";
-          RecvLine(line);
-          if(line != "\n"){
+          if(RecvLine(line)){
+            if(line != "\n"){
             request_header += line;
+            }
+          }else{
+            result = false;
+            break;
           }
       }while(line != "\n");
+
+      return result;
     }
     //读取http请求的请求行，请求报头，包括空行
-    void RecvHttpRequest(HttpRequest *rq)
+    int RecvHttpRequest(HttpRequest *rq)
     {
       std::string request_line;
       std::string request_header;
-      RecvHttpRequestLine(request_line);
-      RecvHttpRequestHeader(request_header);
-
-      rq->SetRequestLine(request_line);
-      rq->SetRequestHeader(request_header);
+      if(RecvHttpRequestLine(request_line) && RecvHttpRequestHeader(request_header)){
+        rq->SetRequestLine(request_line);
+        rq->SetRequestHeader(request_header);
+        return 200;
+      }
+      return 404;
     }
     void RecvHttpBody(HttpRequest *rq)
     {
@@ -341,13 +361,17 @@ class Entry{
     static void MakeResponse(HttpRequest*rq, HttpResponse *rsp, int code)
     {
       std::string line = Util::GetStatusLine(code);
+
+      if(code == 404){
+        rq->SetPath(PAGE_404);
+      }
       rsp->SetResponseLine(line);
-      line = "Content-Type: ";                    
+      line = "Content-Type: ";
       line += Util::SuffixToType(rq->GetSuffix());
-      line += "\r\n";                                                  
+      line += "\r\n";
       rsp->AddResponseHeader(line);               
       line = "Content-Length: ";
-
+      
       if(rq->IsCgi()){
         //TODO
         std::string text = rsp->GetResponseText();
@@ -395,10 +419,10 @@ class Entry{
         dup2(read_pipe[0],0);
         dup2(write_pipe[1],1);
 
-        content_length = "Content_Length=";
+        content_length = "Content-Length=";
         content_length += Util::IntToString(args.size());
 
-        putenv((char *)content_length.c_str());
+        putenv((char*)content_length.c_str());
 
         std::string path = rq->GetPath();
         //增加约定，利用重定向计数来完成文件描述符的约定
@@ -442,10 +466,14 @@ class Entry{
       HttpRequest *rq = new HttpRequest();
       HttpResponse *rsp = new HttpResponse();
 
-      conn->RecvHttpRequest(rq);
-      rq->RequestLineParse();
-      rq->RequestHeaderParse();
-
+      code = conn->RecvHttpRequest(rq);
+      if(code == 200){
+        rq->RequestLineParse();
+        rq->RequestHeaderParse();
+      }else{
+        LOG(Warning,"recv http request error");
+        goto end;
+      }
       if(!rq->IsMethodok()){
         code = 404;
         LOG(Warning,"request Method is Not ok!");
@@ -481,7 +509,7 @@ class Entry{
         //non cgi
         LOG(Normal,"exec by noncgi!");
       }
-
+end:
       MakeResponse(rq,rsp,code);
       conn->SendResponse(rq,rsp);
       //rq->Show();
@@ -490,7 +518,7 @@ class Entry{
       //parse request
       //make response
       //send response
-end:
+      
       delete conn;
       delete rq;
       delete rsp;
