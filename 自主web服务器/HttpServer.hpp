@@ -5,6 +5,7 @@
 #include "Protocol.hpp"
 #include "Sock.hpp"
 #include "Log.hpp"
+#include "ThreadPool.hpp"
 
 #define DefaultPort 8080
 
@@ -14,6 +15,8 @@ class HttpServer{
   private:
     int listen_sock;
     int port;
+
+    ThreadPool *tp;
   public:
     HttpServer(int _port = DefaultPort) : port(_port),listen_sock(-1)
     {}
@@ -23,6 +26,9 @@ class HttpServer{
       Sock::Bind(listen_sock,port);
       Sock::Listen(listen_sock);
       signal(SIGPIPE, SIG_IGN);
+
+      tp = new ThreadPool();
+      tp->InitThreadPool();
     }
 
     void Start()
@@ -32,10 +38,13 @@ class HttpServer{
         int sock = Sock::Accept(listen_sock);
         if(sock >= 0){
          LOG(Normal,"get a new linking!");
-         pthread_t tid;
-         int *p = new int(sock);
-         pthread_create(&tid, nullptr, Entry::HanderRequest, (void*)p);
-         pthread_detach(tid);
+         Task t;
+         t.SetTask(sock,Entry::HanderRequest);
+         tp->PushTask(t);
+         //pthread_t tid;
+         //int *p = new int(sock);
+         //pthread_create(&tid, nullptr, Entry::HanderRequest, (void*)p);
+         //pthread_detach(tid);
         }
       }
     }

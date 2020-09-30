@@ -457,9 +457,7 @@ class Entry{
       return 200;
     }
     static void *HanderRequest(void *arg){
-      int *p = (int*)arg;
-      int sock = *p;
-      delete p;
+      int sock = *(int*)arg;
 
       int code = 200;
       Connect *conn = new Connect(sock);
