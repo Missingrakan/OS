@@ -38,6 +38,11 @@ class UserInfo
     ~UserInfo()
     {}
 
+    std::string& getPassword()
+    {
+        return password_;
+    }
+
     private:
         std::string nick_name_;
         std::string school_;
@@ -63,7 +68,7 @@ class UserManager
     }
 
     //处理注册请求
-    int dealRegister(const std::string& nick_name, const std::string& school, const std::string& password)
+    int dealRegister(const std::string& nick_name, const std::string& school, const std::string& password, uint32_t* user_id)
     {
         //1.判断字段是否为空
         if(nick_name.size() == 0 || school.size() == 0 || password.size() == 0)
@@ -75,7 +80,7 @@ class UserManager
         pthread_mutex_lock(&map_lock_);
         //3.分配用户id
         UserInfo ui(nick_name, school, password, prepare_id_);
-
+        *user_id = prepare_id_;
         //更改用户状态
         
         //4.将用户数据插入到map当中
@@ -83,6 +88,43 @@ class UserManager
         //5.更新预分配用户id
         prepare_id_++;
         pthread_mutex_unlock(&map_lock_);
+        return 0;
+    }
+
+    int dealLogin(uint32_t id, const std::string& password)
+    {
+        //1.判断password是否为空
+        //2.使用id，在unordered_map当中查找是否有该id对应的值
+        //      2.1 没找到该id对应的值，返回登录失败
+        //      2.2 找到了id对应的值
+        //          对比保存的密码值和本次提交的密码值是否一致
+        //              a. 如果一致，则登录成功
+        //              b. 如果不一致，则登陆失败
+        
+        if(password.size() == 0)
+        {
+            return -1;
+        }
+
+        pthread_mutex_lock(&map_lock_);
+        auto it = user_map_.find(id);
+        if(it == user_map_.end())
+        {
+            pthread_mutex_unlock(&map_lock_);
+            return -2;
+        }
+
+        //找到了，比较密码
+        std::string reg_password = it->second.getPassword();
+        if(reg_password != password)
+        {
+            pthread_mutex_unlock(&map_lock_);
+            return -3;
+        }
+
+        //密码一致
+        pthread_mutex_unlock(&map_lock_);
+        return 0;
     }
     private:
         std::unordered_map<uint32_t, UserInfo> user_map_;

@@ -5,6 +5,8 @@
 
 #include <iostream>
 
+#define TCP_PORT 17878
+
 //注册请求的数据格式
 /*
  * 1.昵称
@@ -64,6 +66,14 @@ enum Status
     LOGIN_SUCCESS
 };
 
+const char* StatusInfo[] =
+{
+    "REGISTER_FAILED",
+    "REGISTER_SUCCESS",
+    "LOGIN_FAILED",
+    "LOGIN_SUCCESS"
+};
+
 //如何标识当前的请求是注册请求还是登录请求
 /*
  * 方案：
@@ -75,4 +85,10 @@ enum ResqType
 {
     REGISTER_RESQ = 0,
     LOGIN_RESQ
+};
+
+const char* ResqTypeInfo[] =
+{
+    "REGISTER_RESQ",
+    "LOGIN_RESQ"
 };
