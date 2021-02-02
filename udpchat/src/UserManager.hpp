@@ -33,6 +33,7 @@ class UserInfo
         school_ = school;
         password_ = password;
         user_id_ = user_id;
+        user_status_ = REGISTER_FAILED;
     }
 
     ~UserInfo()
@@ -43,6 +44,11 @@ class UserInfo
         return password_;
     }
 
+    void setUserStatus(int status)
+    {
+        user_status_ = status;
+    }
+
     private:
         std::string nick_name_;
         std::string school_;
@@ -50,6 +56,8 @@ class UserInfo
 
         //用户id
         uint32_t user_id_;
+
+        int user_status_;
 };
 
 class UserManager
@@ -82,7 +90,7 @@ class UserManager
         UserInfo ui(nick_name, school, password, prepare_id_);
         *user_id = prepare_id_;
         //更改用户状态
-        
+        ui.setUserStatus(REGISTER_SUCCESS);
         //4.将用户数据插入到map当中
         user_map_.insert(std::make_pair(prepare_id_, ui));
         //5.更新预分配用户id
@@ -118,11 +126,13 @@ class UserManager
         std::string reg_password = it->second.getPassword();
         if(reg_password != password)
         {
+            it->second.setUserStatus(LOGIN_FAILED);
             pthread_mutex_unlock(&map_lock_);
             return -3;
         }
 
         //密码一致
+        it->second.setUserStatus(LOGIN_SUCCESS);
         pthread_mutex_unlock(&map_lock_);
         return 0;
     }

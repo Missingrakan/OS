@@ -14,9 +14,10 @@
 #include "ConnectInfo.hpp"
 #include "tools.hpp"
 #include "UserManager.hpp"
-
+#include "MessagePool.hpp"
 
 #define MAX_ROUND_COUNT 10
+#define THREAD_COUNT 1
 
 class TcpConnect
 {
@@ -63,10 +64,27 @@ class ChatServer
             tcp_sock_ = -1;
             tcp_port_ = TCP_PORT;
             user_manager_ = NULL;
+            udp_sock_ = -1;
+            udp_port_ = UDP_PORT;
+            memset(con_tid_, '\0', THREAD_COUNT*sizeof(pthread_t));
+            memset(pro_tid_, '\0', THREAD_COUNT*sizeof(pthread_t));
+            msg_pool_ = NULL;
         }
 
         ~ChatServer()
-        {}
+        {
+            if(user_manager_)
+            {
+                delete user_manager_;
+                user_manager_ = NULL;
+            }
+
+            if(msg_pool_)
+            {
+                delete msg_pool_;
+                msg_pool_ = NULL;
+            }
+        }
 
         /*
          * 初始化变量(服务)的接口，被调用者调用的接口
@@ -74,6 +92,14 @@ class ChatServer
          * */
         int initServer(uint16_t tcp_port = TCP_PORT)
         {
+            //创建消息池
+            msg_pool_ = new MsgPool(1024);
+            if(msg_pool_ == NULL)
+            {
+                LOG(ERROR, "init msgpool failed") << std::endl;
+                return -1;
+            }
+
             // 1.创建tcp-socket，并且绑定地址信息，监听
             // 注册+登录模块
             tcp_sock_ = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
@@ -115,6 +141,13 @@ class ChatServer
                 return -1;
             }
 
+            udp_sock_ = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
+            if(udp_sock_ < 0)
+            {
+                LOG(ERROR, "create udp socket failed") << std::endl;
+                return -1;
+            }
+
             return 0;
         }
 
@@ -135,8 +168,24 @@ class ChatServer
              *    tcp是否创建线程取决于accept函数是否调用成功(阻塞)
              *
              * */
+
             //udp线程创建
-            
+            for(int i = 0;i < THREAD_COUNT; i++)
+            {
+                int ret = pthread_create(&con_tid_[i], NULL, consumeStart, (void*)this);
+                if(ret < 0)
+                {
+                    LOG(ERROR, "start udp thread failed") << std::endl;
+                    return -1;
+                }
+
+                ret = pthread_create(&pro_tid_[i], NULL, productStart, (void*)this);
+                if(ret < 0)
+                {
+                    LOG(ERROR, "start udp thread failed") << std::endl;
+                    return -1;
+                }
+            }
 
             //tcp线程创建
             
@@ -167,6 +216,29 @@ class ChatServer
             }
         }
     private:
+        static void* consumeStart(void* arg)
+        {
+            pthread_detach(pthread_self());
+            ChatServer* cs = (ChatServer*)arg;
+            //1.从消息池当中获取数据
+            //2.推送给所有的在线用户
+            while(1)
+            {
+                cs->sendMsg();
+            }
+        }
+
+        static void* productStart(void* arg)
+        {
+            pthread_detach(pthread_self());
+            ChatServer* cs = (ChatServer*)arg;
+            //1.接收udp数据
+            //2.将数据发送到消息池
+            while(1)
+            {
+                cs->recvMsg();
+            }
+        }
         static void* loginRegisterStart(void* arg)
         {
             /*
@@ -296,10 +368,43 @@ class ChatServer
 
             return LOGIN_SUCCESS;
         }
+
+        int recvMsg()
+        {
+
+        }
+
+        int sendMsg()
+        {
+            /*
+             * 1.接收udp数据
+             * 2.判断该用户是否是登录用户
+             * 3.判断该用户是否是第一次发送udp数据
+             *      如果是：需要保存用户的udp地址，并且将该用户放到
+             *              在线用户列表中
+             *      如果不是：说明这个用户就是老用户了，之前已经保存
+             *                过该用户的udp地址信息了
+             * 4.将数据发送到消息池
+             * */
+
+            char buf[UDP_MAX_DATA_LEN] = {0};
+            ssize_t recv_size = recvfrom(udp_sock_, buf, sizeof(buf)-1, 0, NULL, NULL);
+            if(recv_size < 0)
+            {
+                return -1;
+            }
+        }
     private:
         int tcp_sock_;
         uint16_t tcp_port_;
         int udp_sock_;
+        uint16_t udp_port_;
 
         UserManager* user_manager_;
+
+        //udp线程的标识符数组
+        pthread_t con_tid_[THREAD_COUNT];
+        pthread_t pro_tid_[THREAD_COUNT];
+
+        MsgPool* msg_pool_;
 };

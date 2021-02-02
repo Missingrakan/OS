@@ -6,6 +6,9 @@
 #include <iostream>
 
 #define TCP_PORT 17878
+#define UDP_PORT 17878
+
+#define UDP_MAX_DATA_LEN 10240
 
 //注册请求的数据格式
 /*

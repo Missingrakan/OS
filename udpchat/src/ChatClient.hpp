@@ -1,5 +1,6 @@
 #pragma once
 
+#include <unistd.h>
 #include <sys/socket.h>
 #include <sys/types.h>
 #include <arpa/inet.h>
@@ -87,10 +88,12 @@ class UdpClient
         std::cout << "please enter nick-name# ";
         fflush(stdout);
         std::cin >> ri.nick_name_;
+        me_.nick_name_ = ri.nick_name_;
 
         std::cout << "please enter school# ";
         fflush(stdout);
         std::cin >> ri.school_;
+        me_.school_ = ri.school_;
 
         /*
          * 对于密码字段而言，我们需要进行双重校验，防止用户在输入密码时"心手"不一致
@@ -109,6 +112,7 @@ class UdpClient
             if(first_password == second_password)
             {
                 strncpy(ri.password_, first_password.c_str(), sizeof(ri.password_));
+                me_.password_ = first_password;
                 break;
             }
         }
@@ -130,6 +134,8 @@ class UdpClient
         else if(recv_size == 0)
         {
             LOG(ERROR, "udpchat server shutdown connect") << std::endl;
+            closeFd();
+            return -1;
         }
         //6.判断应答结果
         if(reply_info.resp_status_ == REGISTER_FAILED)
@@ -139,8 +145,79 @@ class UdpClient
         }
         //7.返回给上层调用者注册的结果
         LOG(INFO, "register success") << std::endl;
+        me_.user_id_ = reply_info.id_;
         return 0;
     }
+
+    int loginToSvr(std::string& ip)
+    {
+        //1.创建套接字
+        int ret = createSock();
+        if(ret < 0)
+        {
+            return -1;
+        }
+        //2.连接服务端
+        ret = connectToSvr(ip);
+        if(ret < 0)
+        {
+            return -1;
+        }
+        //3.发送类型
+        char type = LOGIN_RESQ;
+        ssize_t send_size = send(tcp_sock_, &type, 1, 0);
+        if(send_size < 0)
+        {
+            LOG(ERROR, "send login packet failed") << std::endl;
+            return -1;
+        }
+        //4.发送登录包
+        struct LoginInfo li;
+        li.id_ = me_.user_id_;
+        strncpy(li.password_, me_.password_.c_str(), sizeof(li.password_));
+        send_size = send(tcp_sock_, &li, sizeof(li), 0);
+        if(send_size < 0)
+        {
+            LOG(ERROR, "send login packet failed") << std::endl;
+            return -1;
+        }
+        //5.接收应答
+        struct RelpyInfo reply_info;
+        ssize_t recv_size = recv(tcp_sock_, &reply_info, sizeof(reply_info), 0);
+        if(recv_size < 0)
+        {
+            LOG(ERROR, "recv failed") << std::endl;
+            return -1;
+        }
+        else if(recv_size == 0)
+        {
+            closeFd();
+            LOG(ERROR, "server shutdown connect") << std::endl;
+            return -1;
+        }
+
+        //6.接收应答数据
+        if(reply_info.resp_status_ != LOGIN_SUCCESS)
+        {
+            LOG(ERROR, "recv status not LOGIN_SUCCESS") << std::endl;
+            return -1;
+        }
+
+        LOG(INFO, "login success") << std::endl;
+        return 0;
+    }
+
+    void closeFd()
+    {
+        if(tcp_sock_ > 0)
+        {
+            close(tcp_sock_);
+            tcp_sock_ = -1;
+        }
+    }
+
     private:
         int tcp_sock_;
+
+        MySelf me_;
 };
