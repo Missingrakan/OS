@@ -69,6 +69,7 @@ class ChatServer
             memset(con_tid_, '\0', THREAD_COUNT*sizeof(pthread_t));
             memset(pro_tid_, '\0', THREAD_COUNT*sizeof(pthread_t));
             msg_pool_ = NULL;
+            udp_msg_ = NULL;
         }
 
         ~ChatServer()
@@ -83,6 +84,12 @@ class ChatServer
             {
                 delete msg_pool_;
                 msg_pool_ = NULL;
+            }
+
+            if(udp_msg_)
+            {
+                delete udp_msg_;
+                udp_msg_ = NULL;
             }
         }
 
@@ -147,6 +154,8 @@ class ChatServer
                 LOG(ERROR, "create udp socket failed") << std::endl;
                 return -1;
             }
+
+            bind(udp_sock_, (struct sockaddr*)&addr, sizeof(addr));
 
             return 0;
         }
@@ -371,11 +380,6 @@ class ChatServer
 
         int recvMsg()
         {
-
-        }
-
-        int sendMsg()
-        {
             /*
              * 1.接收udp数据
              * 2.判断该用户是否是登录用户
@@ -388,11 +392,66 @@ class ChatServer
              * */
 
             char buf[UDP_MAX_DATA_LEN] = {0};
-            ssize_t recv_size = recvfrom(udp_sock_, buf, sizeof(buf)-1, 0, NULL, NULL);
+            struct sockaddr_in peer_addr;
+            socklen_t peer_addr_len = sizeof(peer_addr);
+            ssize_t recv_size = recvfrom(udp_sock_, buf, sizeof(buf)-1, 0, (struct sockaddr*)&peer_addr,&peer_addr_len);
             if(recv_size < 0)
+            {
+                perror("recvfrom");
+                sleep(1);
+                LOG(ERROR, "recv udp msg failed") << std::endl;
+                return -1;
+            }
+
+            UdpMsg um;
+            std::string msg;
+            msg.assign(buf, strlen(buf));
+
+            std::cout << "udp msg is " << msg << std::endl;
+            um.deserialize(msg);
+
+            //需要使用user_id和用户管理模块进行验证
+            //      1.先试用该user_id去map当中查找
+            //      2.需要判断当前用户的状态，保存用户的udp地址信息
+            
+            if(user_manager_->isLogin(um.user_id_, peer_addr, peer_addr_len) < 0)
             {
                 return -1;
             }
+
+            msg_pool_->pushMsg(msg);
+            return 0;
+        }
+
+        int sendMsg()
+        {
+            //1.从消息池当中获取消息
+            //2.按照在线用户列表推送消息
+            std::string msg;
+            msg_pool_->popMsg(&msg);
+
+            std::vector<UserInfo> vec;
+            user_manager_->getOnlineUser(&vec);
+
+            for(size_t i = 0; i < vec.size(); ++i)
+            {
+                sendUdpMsg(msg, vec[i].getAddrInfo(), vec[i].getAddrlenInfo());
+            }
+
+            return 0;
+        }
+
+        int sendUdpMsg(const std::string& msg, struct sockaddr_in addr, socklen_t addr_len)
+        {
+            ssize_t send_size = sendto(udp_sock_, msg.c_str(), msg.size(), 0, (struct sockaddr*)&addr, addr_len);
+            if(send_size < 0)
+            {
+                //wait...
+                LOG(ERROR, "send msg failed, msg is ") << msg << "ip is " << inet_ntoa(addr.sin_addr) << "port is" << ntohs(addr.sin_port) << std::endl;
+                return -1;
+            }
+
+            return 0;
         }
     private:
         int tcp_sock_;
@@ -407,4 +466,6 @@ class ChatServer
         pthread_t pro_tid_[THREAD_COUNT];
 
         MsgPool* msg_pool_;
+
+        UdpMsg* udp_msg_;
 };

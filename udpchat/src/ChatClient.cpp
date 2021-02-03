@@ -57,6 +57,16 @@ int main(int argc, char* argv[])
             else if(ret == 0)
             {
                 LOG(INFO, "login success, please chatting...") << std::endl;
+                while(1)
+                {
+                    std::string msg;
+                    std::cout << "please enter your msg# ";
+                    fflush(stdout);
+                    std::cin >> msg;
+
+                    uc.sendUdpMsg(msg, ip);
+                    uc.recvUdpMsg();
+                }
             }
         }
         else if(select == 3)

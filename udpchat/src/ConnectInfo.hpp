@@ -5,6 +5,8 @@
 
 #include <iostream>
 
+#include <jsoncpp/json/json.h>
+
 #define TCP_PORT 17878
 #define UDP_PORT 17878
 
@@ -66,7 +68,8 @@ enum Status
     REGISTER_FAILED = 0,
     REGISTER_SUCCESS,
     LOGIN_FAILED,
-    LOGIN_SUCCESS
+    LOGIN_SUCCESS,
+    ONLINE
 };
 
 const char* StatusInfo[] =
@@ -94,4 +97,49 @@ const char* ResqTypeInfo[] =
 {
     "REGISTER_RESQ",
     "LOGIN_RESQ"
+};
+
+//双方约定的udp数据格式
+
+class UdpMsg
+{
+    public:
+        UdpMsg()
+        {}
+
+        ~UdpMsg()
+        {}
+
+        //序列化接口，将对象转换为二进制
+        void serialize(std::string* msg)
+        {
+            Json::Value json_msg;
+
+            json_msg["nick_name"] = nick_name_;
+            json_msg["school"] = school_;
+            json_msg["user_id"] = user_id_;
+            json_msg["msg"] = msg_;
+
+            Json::FastWriter writer;
+            *msg = writer.write(json_msg);
+        }
+
+        //反序列化接口，将二进制转换为对象
+        void deserialize(std::string msg)
+        {
+            Json::Reader reader;
+            Json::Value val;
+            reader.parse(msg, val);
+
+            nick_name_ = val["nick_name"].asString();
+            school_ = val["school"].asString();
+            user_id_ = val["user_id"].asUInt();
+            msg_ = val["msg"].asString();
+        }
+
+    public:
+        std::string nick_name_;
+        std::string school_;
+        uint32_t user_id_;
+        std::string msg_;
 };

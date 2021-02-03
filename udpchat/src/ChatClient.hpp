@@ -26,6 +26,12 @@ class UdpClient
     UdpClient()
     {
         tcp_sock_ = -1;
+        udp_sock_ = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
+        if(udp_sock_ < 0)
+        {
+            LOG(ERROR, "create udp socket failed") << std::endl;
+            exit(0);
+        }
     }
 
     ~UdpClient()
@@ -216,8 +222,49 @@ class UdpClient
         }
     }
 
+    int sendUdpMsg(const std::string& msg, const std::string& ip)
+    {
+        UdpMsg um;
+        um.nick_name_ = me_.nick_name_;
+        um.school_ = me_.school_;
+        um.user_id_ = me_.user_id_;
+        um.msg_ = msg;
+
+        std::string str_msg;
+        um.serialize(&str_msg);
+
+        struct sockaddr_in addr;
+        addr.sin_family = AF_INET;
+        addr.sin_port = htons(UDP_PORT);
+        addr.sin_addr.s_addr = inet_addr(ip.c_str());
+
+        ssize_t send_size = sendto(udp_sock_, str_msg.c_str(), str_msg.size(), 0, (struct sockaddr*)&addr, sizeof(addr));
+        if(send_size < 0)
+        {
+            LOG(ERROR, "send udp msg failed") << std::endl;
+        }
+        return 0;
+    }
+
+    int recvUdpMsg()
+    {
+        char buf[UDP_MAX_DATA_LEN] = {0};
+        recvfrom(udp_sock_, buf, sizeof(buf)-1, 0, NULL, NULL);
+
+        UdpMsg um;
+        std::string msg;
+        msg.assign(buf, strlen(buf));
+        um.deserialize(msg);
+
+        std::cout << um.nick_name_ << ":" << um.school_ << "# ";
+        std::cout << um.msg_ << std::endl;
+        return 0;
+    }
+
     private:
         int tcp_sock_;
 
         MySelf me_;
+
+        int udp_sock_;
 };
