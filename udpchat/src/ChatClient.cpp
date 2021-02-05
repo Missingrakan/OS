@@ -1,5 +1,6 @@
 #include <unistd.h>
 #include "ChatClient.hpp"
+#include "ChatWindow.hpp"
 
 void menu()
 {
@@ -25,7 +26,8 @@ int main(int argc, char* argv[])
         return -1;
     }
 
-    UdpClient uc;
+    UdpClient* uc = new UdpClient(ip);
+    ChatWindow* cw = new ChatWindow();
 
     while(1)
     {
@@ -36,7 +38,7 @@ int main(int argc, char* argv[])
         std::cin >> select;
         if(select == 1)
         {
-            int ret = uc.registerToSvr(ip);
+            int ret = uc->registerToSvr();
             if(ret < 0)
             {
                 LOG(WARNING, "please retry register") << std::endl;
@@ -45,11 +47,11 @@ int main(int argc, char* argv[])
             {
                 LOG(INFO, "register success! please login...") << std::endl;
             }
-            uc.closeFd();
+            uc->closeFd();
         }
         else if(select == 2)
         {
-            int ret = uc.loginToSvr(ip);
+            int ret = uc->loginToSvr();
             if(ret < 0)
             {
                 LOG(ERROR, "please retry login") << std::endl;
@@ -57,16 +59,7 @@ int main(int argc, char* argv[])
             else if(ret == 0)
             {
                 LOG(INFO, "login success, please chatting...") << std::endl;
-                while(1)
-                {
-                    std::string msg;
-                    std::cout << "please enter your msg# ";
-                    fflush(stdout);
-                    std::cin >> msg;
-
-                    uc.sendUdpMsg(msg, ip);
-                    uc.recvUdpMsg();
-                }
+                cw->start(uc);
             }
         }
         else if(select == 3)
@@ -78,11 +71,6 @@ int main(int argc, char* argv[])
             LOG(INFO, "exit chat client") << std::endl;
             exit(0);
         }
-    }
-
-    while(1)
-    {
-        sleep(1);
     }
 
     return 0;

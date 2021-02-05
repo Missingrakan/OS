@@ -155,8 +155,15 @@ class ChatServer
                 return -1;
             }
 
-            bind(udp_sock_, (struct sockaddr*)&addr, sizeof(addr));
+            ret = bind(udp_sock_, (struct sockaddr*)&addr, sizeof(addr));
+            if(ret < 0)
+            {
+                LOG(ERROR, "bind udp port failed") << std::endl;
+                return -2;
+            }
 
+            LOG(INFO, "udp bind port is ") << UDP_PORT << std::endl;
+            LOG(INFO, "Server init success...") << std::endl;
             return 0;
         }
 
@@ -321,6 +328,7 @@ class ChatServer
             return NULL;
         }
 
+    private:
         //不管是注册成功还是注册失败，都需要给客户端返回一个应答
         int dealRegister(int new_sock, uint32_t* user_id)
         {
@@ -407,7 +415,7 @@ class ChatServer
             std::string msg;
             msg.assign(buf, strlen(buf));
 
-            std::cout << "udp msg is " << msg << std::endl;
+            std::cout << "recv udp msg is " << msg << std::endl;
             um.deserialize(msg);
 
             //需要使用user_id和用户管理模块进行验证
@@ -436,6 +444,7 @@ class ChatServer
             for(size_t i = 0; i < vec.size(); ++i)
             {
                 sendUdpMsg(msg, vec[i].getAddrInfo(), vec[i].getAddrlenInfo());
+                std::cout << i << " : " << msg << " ==> " << inet_ntoa(vec[i].getAddrInfo().sin_addr) << std::endl;
             }
 
             return 0;

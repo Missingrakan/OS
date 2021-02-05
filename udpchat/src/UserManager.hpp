@@ -190,7 +190,6 @@ class UserManager
         //如果存在，则获取用户信息，判断用户状态
         //如果不存在，直接返回，刚刚接收的udp数据直接丢弃
         
-        std::cout << "user_id " << user_id << std::endl;
         pthread_mutex_lock(&map_lock_);
         auto it = user_map_.find(user_id);
         if(it == user_map_.end())
@@ -199,27 +198,25 @@ class UserManager
             return -1;
         }
 
-        UserInfo ui = it->second;
-
         //2.判断用户状态
         //      2.1 第一次发送，我们保存该用户的地址信息
         //      2.2 如果不是第一次发送，则不用添加地址信息
         
-        if(ui.getUserStatus() <= LOGIN_FAILED)
+        if(it->second.getUserStatus() <= LOGIN_FAILED)
         {
             pthread_mutex_unlock(&map_lock_);
             return -1;
         }
-        else if(ui.getUserStatus() == LOGIN_SUCCESS)
+        else if(it->second.getUserStatus() == LOGIN_SUCCESS)
         {
             //第一次发送udp消息(刚刚登陆)
-            ui.setUserStatus(ONLINE);
-            ui.setAddrInfo(addr);
-            ui.setAddrlenInfo(addr_len);
+            it->second.setUserStatus(ONLINE);
+            it->second.setAddrInfo(addr);
+            it->second.setAddrlenInfo(addr_len);
 
             //将用户信息添加到在线用户列表当中
             //本质上是为推送消息到udp客户端做铺垫
-            online_user_.push_back(ui);
+            online_user_.push_back(it->second);
         }
         pthread_mutex_unlock(&map_lock_);
         return 0;

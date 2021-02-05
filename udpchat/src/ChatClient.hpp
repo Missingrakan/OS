@@ -23,248 +23,250 @@ struct MySelf
 class UdpClient
 {
     public:
-    UdpClient()
-    {
-        tcp_sock_ = -1;
-        udp_sock_ = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
-        if(udp_sock_ < 0)
+        UdpClient(const std::string& ip) 
         {
-            LOG(ERROR, "create udp socket failed") << std::endl;
-            exit(0);
-        }
-    }
-
-    ~UdpClient()
-    {}
-
-    int createSock()
-    {
-        tcp_sock_ = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
-        if(tcp_sock_ < 0)
-        {
-            LOG(ERROR, "create socket failed");
-            return -1;
-        }
-
-        //为了让客户端可以在同一台机器上多开，我们不主动绑定端口，让操作系统进行绑定
-        return 0;
-    }
-
-    //连接的ip是服务器的ip地址，在ConnectInfo.hpp中已经约定好了
-    
-    int connectToSvr(const std::string& ip)
-    {
-        struct sockaddr_in dest_addr;
-        dest_addr.sin_family = AF_INET;
-        dest_addr.sin_port = htons(TCP_PORT);
-        dest_addr.sin_addr.s_addr = inet_addr(ip.c_str());
-
-        int ret = connect(tcp_sock_, (struct sockaddr*)&dest_addr, sizeof(dest_addr));
-        if(ret < 0)
-        {
-            LOG(ERROR, "connect server failed, addr is") << ip << ":" << TCP_PORT << std::endl;
-            return -1;
-        }
-        return 0;
-    }
-
-    int registerToSvr(const std::string& ip)
-    {
-        //1.创建套接字
-        int ret = createSock();
-        if(ret < 0)
-        {
-            return -1;
-        }
-        //2.连接服务端
-        ret = connectToSvr(ip);
-        if(ret < 0)
-        {
-            return -1;
-        }
-        //3.准备注册包
-        char type = REGISTER_RESQ;
-        ssize_t send_size = send(tcp_sock_, &type, 1, 0);
-        if(send_size < 0)
-        {
-            return -1;
-        }
-
-        struct RegisterInfo ri;
-        std::cout << "please enter nick-name# ";
-        fflush(stdout);
-        std::cin >> ri.nick_name_;
-        me_.nick_name_ = ri.nick_name_;
-
-        std::cout << "please enter school# ";
-        fflush(stdout);
-        std::cin >> ri.school_;
-        me_.school_ = ri.school_;
-
-        /*
-         * 对于密码字段而言，我们需要进行双重校验，防止用户在输入密码时"心手"不一致
-         * */
-        while(1)
-        {
-            std::string first_password;
-            std::string second_password;
-
-            std::cout << "please enter your password# ";
-            fflush(stdout);
-            std::cin >> first_password;
-            std::cout << "please retry enter your password# ";
-            fflush(stdout);
-            std::cin >> second_password;
-            if(first_password == second_password)
+            tcp_sock_ = -1;
+            udp_sock_ = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
+            if(udp_sock_ < 0)
             {
-                strncpy(ri.password_, first_password.c_str(), sizeof(ri.password_));
-                me_.password_ = first_password;
-                break;
+                LOG(ERROR, "create udp socket failed") << std::endl;
+                exit(0);
+            }
+
+            ip_ = ip;
+            vec_.clear();
+        }
+
+        ~UdpClient()
+        {}
+
+        int createSock()
+        {
+            tcp_sock_ = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
+            if(tcp_sock_ < 0)
+            {
+                LOG(ERROR, "create socket failed");
+                return -1;
+            }
+
+            //为了让客户端可以在同一台机器上多开，我们不主动绑定端口，让操作系统进行绑定
+            return 0;
+        }
+
+        //连接的ip是服务器的ip地址，在ConnectInfo.hpp中已经约定好了
+    
+        int connectToSvr()
+        {
+            struct sockaddr_in dest_addr;
+            dest_addr.sin_family = AF_INET;
+            dest_addr.sin_port = htons(TCP_PORT);
+            dest_addr.sin_addr.s_addr = inet_addr(ip_.c_str());
+
+            int ret = connect(tcp_sock_, (struct sockaddr*)&dest_addr, sizeof(dest_addr));
+            if(ret < 0)
+            {
+                LOG(ERROR, "connect server failed, addr is") << ip_ << ":" << TCP_PORT << std::endl;
+                return -1;
+            }
+            return 0;
+        }
+
+        int registerToSvr()
+        {
+            //1.创建套接字
+            int ret = createSock();
+            if(ret < 0)
+            {
+                return -1;
+            }
+
+            //2.连接服务端
+            ret = connectToSvr();
+            if(ret < 0)
+            {
+                return -1;
+            }
+
+            //3.准备注册包
+            char type = REGISTER_RESQ;
+            ssize_t send_size = send(tcp_sock_, &type, 1, 0);
+            if(send_size < 0)
+            {
+                return -1;
+            }
+
+            struct RegisterInfo ri;
+            std::cout << "please enter nick-name# ";
+            fflush(stdout);
+            std::cin >> ri.nick_name_;
+            me_.nick_name_ = ri.nick_name_;
+
+            std::cout << "please enter school# ";
+            fflush(stdout);
+            std::cin >> ri.school_;
+            me_.school_ = ri.school_;
+
+            /*
+             * 对于密码字段而言，我们需要进行双重校验，防止用户在输入密码时"心手"不一致
+             * */
+            while(1)
+            {
+                std::string first_password;
+                std::string second_password;
+
+                std::cout << "please enter your password# ";
+                fflush(stdout);
+                std::cin >> first_password;
+                std::cout << "please retry enter your password# ";
+                fflush(stdout);
+                std::cin >> second_password;
+                if(first_password == second_password)
+                {
+                    strncpy(ri.password_, first_password.c_str(), sizeof(ri.password_));
+                    me_.password_ = first_password;
+                    break;
+                }
+            }
+            //4.发送注册包
+            send_size = send(tcp_sock_, &ri, sizeof(ri), 0);
+            if(send_size < 0)
+            {
+                LOG(ERROR, "send regist infomation failed") << std::endl;
+                return -1;
+            }
+            //5.接收应答
+            struct RelpyInfo reply_info;
+            ssize_t recv_size = recv(tcp_sock_, &reply_info, sizeof(reply_info), 0);
+            if(recv_size < 0)
+            {
+                LOG(ERROR, "recv register infomation failed") << std::endl;
+                return -1;
+            }
+            else if(recv_size == 0)
+            {
+                LOG(ERROR, "udpchat server shutdown connect") << std::endl;
+                closeFd();
+                return -1;
+            }
+            //6.判断应答结果
+            if(reply_info.resp_status_ == REGISTER_FAILED)
+            {
+                LOG(ERROR, "server response register failed") << std::endl;
+                return -1;
+            }
+            //7.返回给上层调用者注册的结果
+            LOG(INFO, "register success") << std::endl;
+            me_.user_id_ = reply_info.id_;
+            return 0;
+        }
+
+        int loginToSvr()
+        {
+            //1.创建套接字
+            int ret = createSock();
+            if(ret < 0)
+            {
+                return -1;
+            }
+            //2.连接服务端
+            ret = connectToSvr();
+            if(ret < 0)
+            {
+                return -1;
+            }
+            //3.发送类型
+            char type = LOGIN_RESQ;
+            ssize_t send_size = send(tcp_sock_, &type, 1, 0);
+            if(send_size < 0)
+            {
+                LOG(ERROR, "send login packet failed") << std::endl;
+                return -1;
+            }
+            //4.发送登录包
+            struct LoginInfo li;
+            li.id_ = me_.user_id_;
+            strncpy(li.password_, me_.password_.c_str(), sizeof(li.password_));
+            send_size = send(tcp_sock_, &li, sizeof(li), 0);
+            if(send_size < 0)
+            {
+                LOG(ERROR, "send login packet failed") << std::endl;
+                return -1;
+            }
+            //5.接收应答
+            struct RelpyInfo reply_info;
+            ssize_t recv_size = recv(tcp_sock_, &reply_info, sizeof(reply_info), 0);
+            if(recv_size < 0)
+            {
+                LOG(ERROR, "recv failed") << std::endl;
+                return -1;
+            }
+            else if(recv_size == 0)
+            {
+                closeFd();
+                LOG(ERROR, "server shutdown connect") << std::endl;
+                return -1;
+            }
+
+            //6.分析应答数据
+            if(reply_info.resp_status_ != LOGIN_SUCCESS)
+            {
+                LOG(ERROR, "recv status not LOGIN_SUCCESS") << std::endl;
+                return -1;
+            }
+
+            LOG(INFO, "login success") << std::endl;
+            return 0;
+        }
+
+        void closeFd()
+        {
+            if(tcp_sock_ > 0)
+            {
+                close(tcp_sock_);
+                tcp_sock_ = -1;
             }
         }
-        //4.发送注册包
-        send_size = send(tcp_sock_, &ri, sizeof(ri), 0);
-        if(send_size < 0)
-        {
-            LOG(ERROR, "send regist infomation failed") << std::endl;
-            return -1;
-        }
-        //5.接收应答
-        struct RelpyInfo reply_info;
-        ssize_t recv_size = recv(tcp_sock_, &reply_info, sizeof(reply_info), 0);
-        if(recv_size < 0)
-        {
-            LOG(ERROR, "recv register infomation failed") << std::endl;
-            return -1;
-        }
-        else if(recv_size == 0)
-        {
-            LOG(ERROR, "udpchat server shutdown connect") << std::endl;
-            closeFd();
-            return -1;
-        }
-        //6.判断应答结果
-        if(reply_info.resp_status_ == REGISTER_FAILED)
-        {
-            LOG(ERROR, "server response register failed") << std::endl;
-            return -1;
-        }
-        //7.返回给上层调用者注册的结果
-        LOG(INFO, "register success") << std::endl;
-        me_.user_id_ = reply_info.id_;
-        return 0;
-    }
 
-    int loginToSvr(std::string& ip)
-    {
-        //1.创建套接字
-        int ret = createSock();
-        if(ret < 0)
+        int sendUdpMsg(const std::string& msg)
         {
-            return -1;
-        }
-        //2.连接服务端
-        ret = connectToSvr(ip);
-        if(ret < 0)
-        {
-            return -1;
-        }
-        //3.发送类型
-        char type = LOGIN_RESQ;
-        ssize_t send_size = send(tcp_sock_, &type, 1, 0);
-        if(send_size < 0)
-        {
-            LOG(ERROR, "send login packet failed") << std::endl;
-            return -1;
-        }
-        //4.发送登录包
-        struct LoginInfo li;
-        li.id_ = me_.user_id_;
-        strncpy(li.password_, me_.password_.c_str(), sizeof(li.password_));
-        send_size = send(tcp_sock_, &li, sizeof(li), 0);
-        if(send_size < 0)
-        {
-            LOG(ERROR, "send login packet failed") << std::endl;
-            return -1;
-        }
-        //5.接收应答
-        struct RelpyInfo reply_info;
-        ssize_t recv_size = recv(tcp_sock_, &reply_info, sizeof(reply_info), 0);
-        if(recv_size < 0)
-        {
-            LOG(ERROR, "recv failed") << std::endl;
-            return -1;
-        }
-        else if(recv_size == 0)
-        {
-            closeFd();
-            LOG(ERROR, "server shutdown connect") << std::endl;
-            return -1;
+            struct sockaddr_in addr;
+            addr.sin_family = AF_INET;
+            addr.sin_port = htons(UDP_PORT);
+            addr.sin_addr.s_addr = inet_addr(ip_.c_str());
+
+            ssize_t send_size = sendto(udp_sock_, msg.c_str(), msg.size(), 0, (struct sockaddr*)&addr, sizeof(addr));
+            if(send_size < 0)
+            {
+                LOG(ERROR, "send udp msg failed") << std::endl;
+            }
+            return 0;
         }
 
-        //6.接收应答数据
-        if(reply_info.resp_status_ != LOGIN_SUCCESS)
+        int recvUdpMsg(std::string* msg)
         {
-            LOG(ERROR, "recv status not LOGIN_SUCCESS") << std::endl;
-            return -1;
+            char buf[UDP_MAX_DATA_LEN] = {0};
+            ssize_t recv_size = recvfrom(udp_sock_, buf, sizeof(buf)-1, 0, NULL, NULL);
+            if(recv_size < 0)
+            {
+                return -1;
+            }
+            msg->assign(buf, strlen(buf));
+
+            return 0;
+        }
+        MySelf& getMe()
+        {
+            return me_;
         }
 
-        LOG(INFO, "login success") << std::endl;
-        return 0;
-    }
-
-    void closeFd()
-    {
-        if(tcp_sock_ > 0)
+        std::vector<UdpMsg>& getVec()
         {
-            close(tcp_sock_);
-            tcp_sock_ = -1;
+            return vec_;
         }
-    }
-
-    int sendUdpMsg(const std::string& msg, const std::string& ip)
-    {
-        UdpMsg um;
-        um.nick_name_ = me_.nick_name_;
-        um.school_ = me_.school_;
-        um.user_id_ = me_.user_id_;
-        um.msg_ = msg;
-
-        std::string str_msg;
-        um.serialize(&str_msg);
-
-        struct sockaddr_in addr;
-        addr.sin_family = AF_INET;
-        addr.sin_port = htons(UDP_PORT);
-        addr.sin_addr.s_addr = inet_addr(ip.c_str());
-
-        ssize_t send_size = sendto(udp_sock_, str_msg.c_str(), str_msg.size(), 0, (struct sockaddr*)&addr, sizeof(addr));
-        if(send_size < 0)
-        {
-            LOG(ERROR, "send udp msg failed") << std::endl;
-        }
-        return 0;
-    }
-
-    int recvUdpMsg()
-    {
-        char buf[UDP_MAX_DATA_LEN] = {0};
-        recvfrom(udp_sock_, buf, sizeof(buf)-1, 0, NULL, NULL);
-
-        UdpMsg um;
-        std::string msg;
-        msg.assign(buf, strlen(buf));
-        um.deserialize(msg);
-
-        std::cout << um.nick_name_ << ":" << um.school_ << "# ";
-        std::cout << um.msg_ << std::endl;
-        return 0;
-    }
-
     private:
         int tcp_sock_;
-
         MySelf me_;
-
         int udp_sock_;
+        std::string ip_;
+        std::vector<UdpMsg> vec_;
 };
